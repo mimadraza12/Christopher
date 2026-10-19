@@ -9,13 +9,14 @@
 -- replicates users/grants. If users live in the operator's XML config, translate there.
 
 -- Ledger: holds ONLY DATABASECHANGELOG + DATABASECHANGELOGLOCK_V1
-CREATE DATABASE IF NOT EXISTS liquibase ON CLUSTER '{cluster}';
+-- Same engine as raw/analytics/direct (Atomic today). Not `default`: that one is Replicated.
+CREATE DATABASE IF NOT EXISTS liquibase ON CLUSTER '{cluster}' ENGINE = Atomic;
 
 -- Liquibase runner: the ONLY schema-changing user
 CREATE USER IF NOT EXISTS liquibase ON CLUSTER '{cluster}'
     IDENTIFIED WITH sha256_password BY '${LIQUIBASE_CH_PASSWORD}';
 GRANT ON CLUSTER '{cluster}' CREATE DATABASE ON *.* TO liquibase;     -- liquibase/<db>/database.sql
-GRANT ON CLUSTER '{cluster}' CLUSTER ON *.* TO liquibase;             -- ON CLUSTER DDL
+GRANT ON CLUSTER '{cluster}' CLUSTER ON *.* TO liquibase;             -- only CREATE DATABASE uses ON CLUSTER
 GRANT ON CLUSTER '{cluster}' SELECT ON system.* TO liquibase;         -- preconditions
 GRANT ON CLUSTER '{cluster}' ALL ON liquibase.* TO liquibase;         -- its own ledger
 -- one block per managed database (add one when a new liquibase/<db>/ folder appears)

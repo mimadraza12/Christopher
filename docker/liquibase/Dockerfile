@@ -32,17 +32,17 @@ RUN mvn -B -q -DskipTests \
         -DoutputDirectory=/out/lib \
  && cp target/liquibase-clickhouse-*.jar /out/lib/
 
-# Cluster mode: the extension reads liquibaseClickhouse.conf from the CLASSPATH.
-# A loose .conf in /liquibase/lib is not on the classpath, so pack it into a jar.
-COPY liquibaseClickhouse.conf /build/conf/liquibaseClickhouse.conf
-RUN cd /build/conf && jar cf /out/lib/zz-christopher-cluster-conf.jar liquibaseClickhouse.conf
+# NO cluster mode. The cluster is one shard / one replica and the databases are Atomic, so
+# the extension's own tables (DATABASECHANGELOG, DATABASECHANGELOGLOCK_V1) are plain
+# MergeTree / ReplacingMergeTree in the `liquibase` database. Cluster mode would add
+# ON CLUSTER, which Replicated databases (e.g. `default`) reject.
 
 # ---------------------------------------------------------------- runtime
 FROM liquibase/liquibase:${LIQUIBASE_VERSION}
 ARG EXTENSION_TAG
 
 LABEL org.opencontainers.image.title="christopher-liquibase" \
-      org.opencontainers.image.description="Liquibase 4.33.0 + liquibase-clickhouse ${EXTENSION_TAG} (cluster mode) + clickhouse-jdbc 0.9.4"
+      org.opencontainers.image.description="Liquibase 4.33.0 + liquibase-clickhouse ${EXTENSION_TAG} (single-node mode) + clickhouse-jdbc 0.9.4"
 
 COPY --from=build /out/lib/ /liquibase/lib/
 

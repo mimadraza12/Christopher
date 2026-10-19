@@ -4,7 +4,7 @@
 ## Checklist
 - [ ] One changeset per file, `--liquibase formatted sql` header, unique `id`
 - [ ] Precondition + `IF [NOT] EXISTS`, explicit `--rollback`
-- [ ] `ON CLUSTER '{cluster}'` and Replicated engine
+- [ ] No `ON CLUSTER` and no `Replicated*` engine paths on objects (Replicated databases replicate DDL themselves)
 - [ ] No edits to already-applied files (views/ excepted)
 - [ ] Lossy type mappings called out below
 - [ ] Ordering: this must be applied BEFORE the source change flows through CDC — source change is gated on it

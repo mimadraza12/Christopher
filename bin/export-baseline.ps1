@@ -47,10 +47,11 @@ function Convert-Ddl([string]$ddl, [bool]$isView) {
     $d = $ddl
     $d = $d -replace " UUID '[0-9a-f-]{36}'", ''                                   # hidden table UUIDs
     $d = $d -replace '/clickhouse/tables/[0-9a-f-]{36}/', '/clickhouse/tables/{uuid}/' # expanded {uuid}
+    # Replicated databases: DDL replicates by itself, ON CLUSTER is rejected inside them
     if ($isView) {
-        $d = $d -replace '^CREATE VIEW (\S+)', 'CREATE OR REPLACE VIEW $1 ON CLUSTER ''{cluster}'''
+        $d = $d -replace '^CREATE VIEW (\S+)', 'CREATE OR REPLACE VIEW $1'
     } else {
-        $d = $d -replace '^CREATE (TABLE|MATERIALIZED VIEW) (\S+)', 'CREATE $1 IF NOT EXISTS $2 ON CLUSTER ''{cluster}'''
+        $d = $d -replace '^CREATE (TABLE|MATERIALIZED VIEW) (\S+)', 'CREATE $1 IF NOT EXISTS $2'
     }
     $d.TrimEnd() + ';'
 }
@@ -62,7 +63,8 @@ $tplDatabase = @'
 --comment: The __DB__ database itself.
 --preconditions onFail:MARK_RAN onError:HALT
 --precondition-sql-check expectedResult:0 SELECT count() FROM system.databases WHERE name = '__DB__'
-CREATE DATABASE IF NOT EXISTS __DB__ ON CLUSTER '{cluster}';
+CREATE DATABASE IF NOT EXISTS __DB__ ON CLUSTER '{cluster}'
+    ENGINE = __ENGINE__;
 --rollback empty
 '@
 $tplTable = @'
@@ -73,7 +75,7 @@ $tplTable = @'
 --preconditions onFail:MARK_RAN onError:HALT
 --precondition-sql-check expectedResult:0 SELECT count() FROM system.tables WHERE database = '__DB__' AND name = '__NAME__'
 __DDL__
---rollback DROP TABLE IF EXISTS __DB__.__NAME__ ON CLUSTER '{cluster}' SYNC;
+--rollback DROP TABLE IF EXISTS __DB__.__NAME__ SYNC;
 '@
 $tplView = @'
 --liquibase formatted sql
@@ -81,7 +83,7 @@ $tplView = @'
 --changeset __AUTHOR__:__DB__-__NAME__ runOnChange:true labels:view,baseline
 --comment: Baseline: view __DB__.__NAME__ as of __DATE__. Edit this file in place for later changes.
 __DDL__
---rollback DROP VIEW IF EXISTS __DB__.__NAME__ ON CLUSTER '{cluster}' SYNC;
+--rollback DROP VIEW IF EXISTS __DB__.__NAME__ SYNC;
 '@
 $tplMv = @'
 --liquibase formatted sql
@@ -91,7 +93,7 @@ $tplMv = @'
 --preconditions onFail:MARK_RAN onError:HALT
 --precondition-sql-check expectedResult:0 SELECT count() FROM system.tables WHERE database = '__DB__' AND name = '__NAME__'
 __DDL__
---rollback DROP VIEW IF EXISTS __DB__.__NAME__ ON CLUSTER '{cluster}' SYNC;
+--rollback DROP VIEW IF EXISTS __DB__.__NAME__ SYNC;
 '@
 function Fill([string]$tpl, [string]$db, [string]$name, [string]$ddl) {
     $tpl.Replace('__AUTHOR__', $Author).Replace('__DB__', $db).Replace('__NAME__', $name).Replace('__DATE__', $Date).Replace('__DDL__', $ddl)
@@ -112,7 +114,12 @@ $skipped = @()
 foreach ($db in $Databases) {
     $dbDir = Join-Path $Lb $db
     Write-Host "== $db"
-    Write-Lf (Join-Path $dbDir 'database.sql') (Fill $tplDatabase $db '' '')
+    $dbRow = Invoke-Ch "SELECT engine, engine_full FROM system.databases WHERE name = '$db'"
+    $engine = if ($dbRow -and $dbRow[0].engine_full) { $dbRow[0].engine_full } else { 'Atomic' }
+    if ($engine -like 'Replicated*' -and $engine -notmatch '\{') {
+        Write-Warning "$db engine has no {shard}/{replica} macros ($engine) - check database.sql before committing"
+    }
+    Write-Lf (Join-Path $dbDir 'database.sql') ((Fill $tplDatabase $db '' '').Replace('__ENGINE__', $engine))
     $tplChangelog = [IO.File]::ReadAllText((Join-Path $Root 'templates\database\changelog.yaml')).Replace('__DB__', $db)
     Write-Lf (Join-Path $dbDir 'changelog.yaml') $tplChangelog
     foreach ($sub in 'tables', 'views', 'materialized-views', 'scripts') {

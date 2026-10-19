@@ -27,7 +27,7 @@ merged PR applied by GitHub Actions.**
 │   │   └── scripts/<year>/         # data scripts, run once: YYYY-MM-DD-NNN-<what>.sql
 │   └── analytics/                  # same structure
 ├── templates/changesets/           # starting points for each changeset type
-├── docker/liquibase/               # Liquibase + ClickHouse extension image (cluster mode)
+├── docker/liquibase/               # Liquibase + ClickHouse extension image
 ├── ops/clickhouse/                 # one-time bootstrap (db, users, grants) + audit queries
 ├── config/replicated-subset.yaml   # which MSSQL tables/columns go to ClickHouse
 ├── bin/                            # lb.sh / lb.ps1 (local liquibase), new-changeset.sh
@@ -51,7 +51,7 @@ merged PR applied by GitHub Actions.**
 |---|---|---|
 | validate / status | nothing applied | fix in a new PR |
 | update | earlier changesets applied + recorded; the failing one either not applied, or its DDL ran but wasn't recorded | fix the cause, re-run the workflow: preconditions + `IF [NOT] EXISTS` make it converge |
-| `ON CLUSTER` timeout | DDL applied on reachable replicas; the others catch up from the DDL queue | check replicas (`ops/clickhouse/003-ledger-queries.sql`, last query), don't roll back |
+| DDL timeout | applied on reachable replicas; the others catch up from the Replicated database's queue | check replicas (`ops/clickhouse/003-ledger-queries.sql`, last query), don't roll back |
 | tag | applied, but this release is untagged | re-run; tagging is idempotent |
 
 ## Conventions
@@ -73,7 +73,10 @@ merged PR applied by GitHub Actions.**
   creates `liquibase/<db>/` with `changelog.yaml`, `database.sql` and the subfolders, and appends it to the END of
   `changelog-master.yaml`. Move that include up if the new database must exist before one listed above it, and
   grant the `liquibase` user on it.
-- Always `ON CLUSTER '{cluster}'`.
+- Topology today: ONE shard, ONE replica; `raw`, `analytics`, `direct` are **Atomic** databases (`default` is Replicated).
+  So: no `ON CLUSTER` on tables/views/MVs/ALTERs and plain engines (`ReplacingMergeTree`). Only `CREATE DATABASE`
+  (database.sql) uses `ON CLUSTER`. If replicas are added later, convert the databases to the Replicated engine:
+  changesets stay as they are (Replicated databases replicate DDL themselves and reject `ON CLUSTER`).
 - CDC tables: `ReplacingMergeTree(_version, _deleted)` with `_version UInt64` and `_deleted UInt8`, identical on every table.
 - Contexts: `context:test` changesets only run with `--contexts=test`. Changesets without a context run everywhere.
 - **Ordering:** ClickHouse DDL is applied **before** the matching source change flows through CDC.
@@ -85,8 +88,8 @@ merged PR applied by GitHub Actions.**
 Liquibase always runs in the container built from `docker/liquibase/Dockerfile`:
 
 - Liquibase 4.33.0 + `liquibase-clickhouse` 0.8.3-arenadata (built from the tag) + clickhouse-jdbc 0.9.4. These are pinned together.
-- `liquibaseClickhouse.conf` is packed into a jar, so cluster mode is always on. Look for
-  `Work in cluster replicated clickhouse mode` in the log. If it's missing, Liquibase's own tables were created non-replicated.
+- The extension runs in single-node mode: its own tables are plain MergeTree in the `liquibase` database.
+  (Cluster mode would add `ON CLUSTER`, which the Replicated `default` database rejects. Never point the URL at `default`.)
 
 ### Local (inspection / planning only)
 
@@ -154,7 +157,7 @@ Read-only against ClickHouse; existing files are never overwritten.
 - everything applied
 - data scripts that ran
 - what each run applied
-- replicas that missed `ON CLUSTER` DDL
+- replicas whose schema differs (missed DDL)
 
 `ops/clickhouse/002-out-of-band-ddl-check.sql` finds DDL sent by anyone other than `liquibase`.
 
