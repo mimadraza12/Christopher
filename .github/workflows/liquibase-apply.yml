@@ -1,0 +1,75 @@
+# Applies the changelog to ONE environment. Called by liquibase.yml after merge.
+name: liquibase-apply
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: [self-hosted, aks]
+    environment: ${{ inputs.environment }}
+    # Liquibase's lock is NOT atomic on ClickHouse. This is the real lock:
+    # one run per environment, queued, never cancelled mid-apply.
+    concurrency:
+      group: liquibase-${{ inputs.environment }}
+      cancel-in-progress: false
+    container:
+      image: ${{ vars.LIQUIBASE_IMAGE }}
+    env:
+      LIQUIBASE_SEARCH_PATH: liquibase   # relative to the checkout; github.workspace is the HOST path in container jobs
+      LIQUIBASE_COMMAND_CHANGELOG_FILE: changelog-master.yaml
+      LIQUIBASE_COMMAND_URL: ${{ vars.CH_JDBC_URL }}
+      LIQUIBASE_COMMAND_USERNAME: ${{ vars.CH_LIQUIBASE_USER }}
+      LIQUIBASE_COMMAND_PASSWORD: ${{ secrets.CH_LIQUIBASE_PASSWORD }}
+      CH_DB: ${{ vars.CH_DB }}
+      LB_CONTEXTS: ${{ vars.LB_CONTEXTS }}
+      RELEASE_TAG: release-${{ github.run_number }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}          # apply exactly the merged commit
+
+      - name: Validate
+        run: liquibase validate "-DDB=$CH_DB"
+
+      - name: Check for pending changesets
+        id: pending
+        run: |
+          out=$(liquibase status --contexts="$LB_CONTEXTS" "-DDB=$CH_DB")
+          echo "$out"
+          if echo "$out" | grep -qiE 'is up to date'; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update
+        if: steps.pending.outputs.any == 'true'
+        run: liquibase update --contexts="$LB_CONTEXTS" "-DDB=$CH_DB"
+
+      # Only tag when something ran: `tag` labels the latest ledger row and would
+      # otherwise overwrite the previous release's tag.
+      - name: Tag release
+        if: steps.pending.outputs.any == 'true'
+        run: liquibase tag --tag="$RELEASE_TAG" "-DDB=$CH_DB"
+
+      - name: Ledger (last 30)
+        if: always()
+        run: liquibase history "-DDB=$CH_DB" | tail -n 40
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Liquibase apply: ${{ inputs.environment }}"
+            echo "- commit: \`${{ github.sha }}\`"
+            echo "- changes applied: ${{ steps.pending.outputs.any }}"
+            echo "- tag: \`$RELEASE_TAG\` (only if changes applied)"
+          } >> "$GITHUB_STEP_SUMMARY"

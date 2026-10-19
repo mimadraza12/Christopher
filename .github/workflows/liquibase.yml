@@ -1,0 +1,94 @@
+# Plan on PR, apply on merge.
+#
+# Only GitHub Actions applies changes to shared environments. Required setup is in
+# README.md ("GitHub setup"): a self-hosted runner inside AKS, a GitHub Environment per
+# ClickHouse environment with its vars/secrets, and the image from build-liquibase-image.yml.
+name: liquibase
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["liquibase/**", ".github/workflows/liquibase.yml", ".github/workflows/liquibase-apply.yml"]
+  push:
+    branches: [main]
+    paths: ["liquibase/**", ".github/workflows/liquibase.yml", ".github/workflows/liquibase-apply.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ------------------------------------------------------- PR: file checks
+  # Runs on a GitHub-hosted runner: needs git history, not ClickHouse.
+  lint:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Every changeset file has a formatted-SQL header
+        run: |
+          bad=$(grep -rL --include='*.sql' '^--liquibase formatted sql' liquibase/ || true)
+          if [ -n "$bad" ]; then echo "Missing '--liquibase formatted sql' header:"; echo "$bad"; exit 1; fi
+
+      - name: Applied files were not modified or moved
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          changed=$(git diff --name-status "origin/${{ github.base_ref }}"...HEAD -- liquibase/ \
+                    | grep -E '^(M|R|D)' | grep -v -E 'liquibase/views/' || true)
+          if [ -n "$changed" ]; then
+            echo "These existing changeset files were modified/renamed/deleted (only views/ may be edited in place):"
+            echo "$changed"; exit 1
+          fi
+
+  # ------------------------------------------------------------------ PR: plan
+  plan:
+    if: github.event_name == 'pull_request'
+    needs: lint
+    runs-on: [self-hosted, aks]
+    environment: test-plan            # same vars as `test`, but no required reviewers
+    container:
+      image: ${{ vars.LIQUIBASE_IMAGE }}
+    env:
+      LIQUIBASE_SEARCH_PATH: liquibase   # relative to the checkout; github.workspace is the HOST path in container jobs
+      LIQUIBASE_COMMAND_CHANGELOG_FILE: changelog-master.yaml
+      LIQUIBASE_COMMAND_URL: ${{ vars.CH_JDBC_URL }}          # one fixed replica, not the cluster service
+      LIQUIBASE_COMMAND_USERNAME: ${{ vars.CH_LIQUIBASE_USER }}
+      LIQUIBASE_COMMAND_PASSWORD: ${{ secrets.CH_LIQUIBASE_PASSWORD }}
+      CH_DB: ${{ vars.CH_DB }}
+      LB_CONTEXTS: ${{ vars.LB_CONTEXTS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate
+        run: liquibase validate "-DDB=$CH_DB"
+
+      - name: Pending changesets
+        run: liquibase status --verbose --contexts="$LB_CONTEXTS" "-DDB=$CH_DB"
+
+      - name: SQL that would run
+        run: liquibase update-sql --contexts="$LB_CONTEXTS" "-DDB=$CH_DB" | tee plan.sql
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plan-test
+          path: plan.sql
+
+  # ---------------------------------------------------------- merge: apply
+  apply-test:
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/liquibase-apply.yml
+    with:
+      environment: test
+    secrets: inherit
+
+  # Uncomment when prod is onboarded. The `prod` GitHub Environment must have
+  # required reviewers so this waits for a manual approval.
+  # apply-prod:
+  #   needs: apply-test
+  #   uses: ./.github/workflows/liquibase-apply.yml
+  #   with:
+  #     environment: prod
+  #   secrets: inherit

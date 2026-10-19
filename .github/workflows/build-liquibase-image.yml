@@ -1,0 +1,48 @@
+# Builds docker/liquibase/Dockerfile and pushes it to ACR.
+# Runs on a GitHub-hosted runner (needs Docker); the AKS runner only pulls the image.
+name: build-liquibase-image
+
+on:
+  push:
+    branches: [main]
+    paths: ["docker/liquibase/**", ".github/workflows/build-liquibase-image.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write          # OIDC login to Azure
+
+env:
+  IMAGE_NAME: christopher-liquibase
+  IMAGE_TAG: 4.33.0-0.8.3-arenadata
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name "${{ vars.ACR_NAME }}"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: docker/liquibase
+          push: true
+          tags: |
+            ${{ vars.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ vars.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}-${{ github.sha }}
+
+      - name: Smoke test the image
+        run: |
+          img="${{ vars.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+          docker run --rm "$img" --version
+          docker run --rm --entrypoint sh "$img" -c 'ls /liquibase/lib | grep -E "liquibase-clickhouse|clickhouse-jdbc|cluster-conf"'

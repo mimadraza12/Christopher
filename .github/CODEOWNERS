@@ -1,0 +1,7 @@
+# Replace the placeholder team with real GitHub users/teams.
+*                                @your-org/data-platform
+# Data scripts and materialized views can rewrite or lose data: second reviewer.
+/liquibase/scripts/              @your-org/data-platform @your-org/data-platform-leads
+/liquibase/materialized-views/   @your-org/data-platform @your-org/data-platform-leads
+/docker/liquibase/               @your-org/data-platform-leads
+/ops/                            @your-org/data-platform-leads

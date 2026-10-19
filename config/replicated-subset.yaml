@@ -1,0 +1,11 @@
+# Replicated subset: which MSSQL tables/columns are replicated into ClickHouse.
+# Christopher's drift check will read this file. Changes here go through PR review
+# like any changeset, and adding a table here should come with its CREATE TABLE changeset.
+version: 1
+source:
+  engine: mssql
+tables: []
+#  - source: dbo.orders
+#    target: orders
+#    columns: all            # or an explicit list
+#    exclude_columns: []

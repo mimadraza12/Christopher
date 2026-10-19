@@ -1,0 +1,11 @@
+# local secrets / env
+.env
+*.local
+# Liquibase
+liquibase/*.properties.local
+plan*.sql
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

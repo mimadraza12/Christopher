@@ -1,0 +1,25 @@
+# Master changelog. Order matters: in a single run, all table DDL is applied first,
+# then views, then materialized views, then data scripts, so views/scripts can rely
+# on the DDL from the same release.
+#
+# includeAll is recursive and sorts by path, so files are named
+#   YYYY-MM-DD-NNN-<description>.sql
+# Changeset identity = id + author + path relative to the search path. Never move or
+# rename a file once it has been applied anywhere.
+databaseChangeLog:
+  - includeAll:
+      path: tables/
+      relativeToChangelogFile: true
+      errorIfMissingOrEmpty: false
+  - includeAll:
+      path: views/
+      relativeToChangelogFile: true
+      errorIfMissingOrEmpty: false
+  - includeAll:
+      path: materialized-views/
+      relativeToChangelogFile: true
+      errorIfMissingOrEmpty: false
+  - includeAll:
+      path: scripts/
+      relativeToChangelogFile: true
+      errorIfMissingOrEmpty: false
