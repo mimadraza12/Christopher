@@ -16,11 +16,11 @@ Get-Content $EnvFile | Where-Object { $_ -match '^\s*[^#].*=' } | ForEach-Object
     $k, $v = $_ -split '=', 2
     $vars[$k.Trim()] = $v.Trim()
 }
-if (-not $vars['LB_IMAGE'] -or -not $vars['CH_DB']) { throw 'LB_IMAGE and CH_DB must be set in .env' }
+if (-not $vars['LB_IMAGE']) { throw 'LB_IMAGE must be set in .env' }
 
 # On Docker Desktop, reach a port-forward on the host via host.docker.internal
 # (set LIQUIBASE_COMMAND_URL=jdbc:clickhouse://host.docker.internal:8123/<db> in .env).
 docker run --rm -i `
   --env-file $EnvFile `
   -v "$(Join-Path $Root 'liquibase'):/liquibase/changelog:ro" `
-  $vars['LB_IMAGE'] @args "-DDB=$($vars['CH_DB'])"
+  $vars['LB_IMAGE'] @args

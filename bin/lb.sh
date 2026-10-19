@@ -12,10 +12,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$ROOT/.env" ] || { echo "missing $ROOT/.env (copy .env.example)"; exit 1; }
 # shellcheck disable=SC1091
 set -a; . "$ROOT/.env"; set +a
-: "${LB_IMAGE:?}" "${CH_DB:?}"
+: "${LB_IMAGE:?}"
 
 docker run --rm -i \
   --network host \
   --env-file "$ROOT/.env" \
   -v "$ROOT/liquibase:/liquibase/changelog:ro" \
-  "$LB_IMAGE" "$@" "-DDB=$CH_DB"
+  "$LB_IMAGE" "$@"

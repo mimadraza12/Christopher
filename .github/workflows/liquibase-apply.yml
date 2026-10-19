@@ -28,7 +28,6 @@ jobs:
       LIQUIBASE_COMMAND_URL: ${{ vars.CH_JDBC_URL }}
       LIQUIBASE_COMMAND_USERNAME: ${{ vars.CH_LIQUIBASE_USER }}
       LIQUIBASE_COMMAND_PASSWORD: ${{ secrets.CH_LIQUIBASE_PASSWORD }}
-      CH_DB: ${{ vars.CH_DB }}
       LB_CONTEXTS: ${{ vars.LB_CONTEXTS }}
       RELEASE_TAG: release-${{ github.run_number }}-${{ github.run_attempt }}
     steps:
@@ -37,12 +36,12 @@ jobs:
           ref: ${{ github.sha }}          # apply exactly the merged commit
 
       - name: Validate
-        run: liquibase validate "-DDB=$CH_DB"
+        run: liquibase validate
 
       - name: Check for pending changesets
         id: pending
         run: |
-          out=$(liquibase status --contexts="$LB_CONTEXTS" "-DDB=$CH_DB")
+          out=$(liquibase status --contexts="$LB_CONTEXTS")
           echo "$out"
           if echo "$out" | grep -qiE 'is up to date'; then
             echo "any=false" >> "$GITHUB_OUTPUT"
@@ -52,17 +51,17 @@ jobs:
 
       - name: Update
         if: steps.pending.outputs.any == 'true'
-        run: liquibase update --contexts="$LB_CONTEXTS" "-DDB=$CH_DB"
+        run: liquibase update --contexts="$LB_CONTEXTS"
 
       # Only tag when something ran: `tag` labels the latest ledger row and would
       # otherwise overwrite the previous release's tag.
       - name: Tag release
         if: steps.pending.outputs.any == 'true'
-        run: liquibase tag --tag="$RELEASE_TAG" "-DDB=$CH_DB"
+        run: liquibase tag --tag="$RELEASE_TAG"
 
       - name: Ledger (last 30)
         if: always()
-        run: liquibase history "-DDB=$CH_DB" | tail -n 40
+        run: liquibase history | tail -n 40
 
       - name: Summary
         if: always()

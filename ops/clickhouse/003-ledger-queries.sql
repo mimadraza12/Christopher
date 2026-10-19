@@ -1,13 +1,13 @@
--- Paper trail queries against Liquibase's ledger (run in ${DB}).
+-- Paper trail queries against Liquibase's ledger (the `liquibase` database).
 
 -- Everything applied, newest first
 SELECT DATEEXECUTED, ORDEREXECUTED, EXECTYPE, ID, AUTHOR, FILENAME, TAG, LABELS, CONTEXTS
-FROM ${DB}.DATABASECHANGELOG
+FROM liquibase.DATABASECHANGELOG
 ORDER BY ORDEREXECUTED DESC;
 
 -- Data scripts that have run
 SELECT DATEEXECUTED, EXECTYPE, ID, AUTHOR, FILENAME, TAG
-FROM ${DB}.DATABASECHANGELOG
+FROM liquibase.DATABASECHANGELOG
 WHERE LABELS LIKE '%data%'
 ORDER BY DATEEXECUTED;
 
@@ -18,7 +18,7 @@ SELECT DEPLOYMENT_ID,
        count()                  AS changesets,
        anyIf(TAG, TAG IS NOT NULL) AS release_tag,
        groupArray(ID)           AS ids
-FROM ${DB}.DATABASECHANGELOG
+FROM liquibase.DATABASECHANGELOG
 GROUP BY DEPLOYMENT_ID
 ORDER BY started DESC;
 
@@ -26,6 +26,6 @@ ORDER BY started DESC;
 SELECT database, name, uniqExact(create_table_query) AS variants,
        groupArray((hostName(), substring(create_table_query, 1, 120))) AS per_replica
 FROM clusterAllReplicas('{cluster}', system.tables)
-WHERE database = '${DB}'
+WHERE database IN ('raw', 'analytics')
 GROUP BY database, name
 HAVING variants > 1;

@@ -1,0 +1,8 @@
+--liquibase formatted sql
+
+--changeset baseline:baseline-analytics-mv_qualification_types labels:mv,baseline
+--comment: Baseline: materialized view analytics.mv_qualification_types as of 2026-10-19.
+--preconditions onFail:MARK_RAN onError:HALT
+--precondition-sql-check expectedResult:0 SELECT count() FROM system.tables WHERE database = 'analytics' AND name = 'mv_qualification_types'
+CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.mv_qualification_types ON CLUSTER '{cluster}' TO analytics.qualification_types (`product` LowCardinality(String), `tenant` LowCardinality(String), `qualification_type_id` Int32, `name` String, `display_name` String, `description` Nullable(String), `qualification_group_id` Nullable(Int32), `is_active` Bool, `created_on` DateTime64(3), `created_by` String, `last_modified_on` Nullable(DateTime64(3)), `last_modified_by` Nullable(String), `_version` UInt64, `_deleted` UInt8) AS SELECT _product AS product, _tenant AS tenant, Qualification_Type_ID AS qualification_type_id, Qualification_Type_Name AS name, Qualification_Type_Display_Name AS display_name, Qualification_Type_Description AS description, Qualification_Group_ID AS qualification_group_id, Is_Active AS is_active, Created_On AS created_on, Created_By AS created_by, Last_modified_on AS last_modified_on, Last_modified_by AS last_modified_by, _source_ts_ms AS _version, toUInt8(__deleted = 'true') AS _deleted FROM raw.qualification_types;
+--rollback DROP VIEW IF EXISTS analytics.mv_qualification_types ON CLUSTER '{cluster}' SYNC;

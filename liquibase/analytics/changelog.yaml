@@ -1,0 +1,22 @@
+# Changelog for the `analytics` database. Within one run: database, then tables,
+# views, materialized views, data scripts, so later steps can rely on earlier DDL.
+databaseChangeLog:
+  - include:
+      file: database.sql
+      relativeToChangelogFile: true
+  - includeAll:
+      path: tables/
+      relativeToChangelogFile: true
+      errorIfMissingOrEmpty: false
+  - includeAll:
+      path: views/
+      relativeToChangelogFile: true
+      errorIfMissingOrEmpty: false
+  - includeAll:
+      path: materialized-views/
+      relativeToChangelogFile: true
+      errorIfMissingOrEmpty: false
+  - includeAll:
+      path: scripts/
+      relativeToChangelogFile: true
+      errorIfMissingOrEmpty: false

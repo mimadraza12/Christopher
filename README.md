@@ -17,11 +17,15 @@ merged PR applied by GitHub Actions.**
 ```
 .
 ├── liquibase/                      # the changelog (Liquibase search path)
-│   ├── changelog-master.yaml       # includes the folders below, in this order
-│   ├── tables/<table>/             # DDL, run once:   YYYY-MM-DD-NNN-<what>.sql
-│   ├── views/<view>.sql            # one file per view, edited in place (runOnChange)
-│   ├── materialized-views/         # run once, never edited
-│   └── scripts/<year>/             # data scripts, run once: YYYY-MM-DD-NNN-<what>.sql
+│   ├── changelog-master.yaml       # lists the databases IN ORDER (raw, then analytics)
+│   ├── raw/                        # one folder per ClickHouse database
+│   │   ├── changelog.yaml          # database.sql, then tables, views, MVs, scripts
+│   │   ├── database.sql            # CREATE DATABASE raw ...
+│   │   ├── tables/<table>/         # DDL, run once:   YYYY-MM-DD-NNN-<what>.sql
+│   │   ├── views/<view>.sql        # one file per view, edited in place (runOnChange)
+│   │   ├── materialized-views/     # run once, never edited
+│   │   └── scripts/<year>/         # data scripts, run once: YYYY-MM-DD-NNN-<what>.sql
+│   └── analytics/                  # same structure
 ├── templates/changesets/           # starting points for each changeset type
 ├── docker/liquibase/               # Liquibase + ClickHouse extension image (cluster mode)
 ├── ops/clickhouse/                 # one-time bootstrap (db, users, grants) + audit queries
@@ -32,9 +36,9 @@ merged PR applied by GitHub Actions.**
 
 ## How a change flows
 
-1. Create a file: `bin/new-changeset.sh column orders discount_code`. Edit it.
+1. Create a file: `bin/new-changeset.sh analytics column vendors region`. Edit it.
 2. Open a PR. CI runs these checks:
-   - **lint**: every `.sql` has the formatted-SQL header, and no applied file was modified, renamed or deleted (only `views/` may be edited).
+   - **lint**: every `.sql` has the formatted-SQL header, and no applied file was modified, renamed or deleted (only `<db>/views/` may be edited).
    - **plan**: `validate`, `status`, then `update-sql` against `test`. The exact SQL is uploaded as the `plan-test` artifact.
 3. Review and merge.
 4. `liquibase-apply` runs against `test`: `validate` → `status` → `update` → `tag release-<run>-<attempt>` → `history`.
@@ -62,17 +66,19 @@ merged PR applied by GitHub Actions.**
 - One changeset per file. On ClickHouse, keep it to one DDL statement per changeset: DDL isn't transactional.
 - `id` = file name without the date folder; `author` = your handle (or `christopher` for generated changesets).
 - Every changeset has a precondition (`onFail:MARK_RAN` for DDL) and `IF [NOT] EXISTS`, so re-runs converge.
-- Always use `${DB}.<table>`, `ON CLUSTER '{cluster}'` and `Replicated*` engines with
-  `'/clickhouse/tables/{uuid}/{shard}', '{replica}'`.
-- CDC tables: `ReplicatedReplacingMergeTree(..., _version, _is_deleted)` with `_version UInt64`
-  and `_is_deleted UInt8`, identical on every table. Adjust the names once to whatever the sink writes, then never vary them.
+- One folder per database under `liquibase/`. Database names are the same in every environment, so
+  changesets use real names (`analytics.vendors`), never placeholders.
+- Liquibase's own ledger lives in the separate `liquibase` database (the JDBC URL points there), not in raw/analytics.
+- Adding a database: `bin/new-changeset.sh <db> database` (or any `new-changeset.sh <db> ...` / `export-baseline.ps1`)
+  creates `liquibase/<db>/` with `changelog.yaml`, `database.sql` and the subfolders, and appends it to the END of
+  `changelog-master.yaml`. Move that include up if the new database must exist before one listed above it, and
+  grant the `liquibase` user on it.
+- Always `ON CLUSTER '{cluster}'`.
+- CDC tables: `ReplacingMergeTree(_version, _deleted)` with `_version UInt64` and `_deleted UInt8`, identical on every table.
 - Contexts: `context:test` changesets only run with `--contexts=test`. Changesets without a context run everywhere.
 - **Ordering:** ClickHouse DDL is applied **before** the matching source change flows through CDC.
 - **Never move or rename an applied file.** Its path is part of its identity, and Liquibase would run it again.
 - Avoid data scripts on CDC-fed tables. The next CDC event for a row overwrites the fix. Fix data at the source instead.
-
-The `_christopher_smoke` table, view and seed script are `context:test` smoke tests for the whole flow.
-They never run in prod.
 
 ## Running Liquibase
 
@@ -105,7 +111,7 @@ Don't run `update` against shared environments from a laptop. Merging is the dep
 
 Run `ops/clickhouse/001-bootstrap-database-and-users.sql` with the placeholders filled in. It:
 
-- creates the database and the `liquibase` user, which is the only user with DDL grants
+- creates the `liquibase` ledger database and the `liquibase` user, the only user with DDL grants (on raw, analytics)
 - creates the `cdc_sink` user (SELECT/INSERT only) and a `readonly` role
 
 Also turn off auto-create and schema evolution in the sink connector.
@@ -121,14 +127,25 @@ Also turn off auto-create and schema evolution in the sink connector.
 | name | kind | example |
 |---|---|---|
 | `LIQUIBASE_IMAGE` | var | `<acr>.azurecr.io/christopher-liquibase:4.33.0-0.8.3-arenadata` |
-| `CH_JDBC_URL` | var | `jdbc:clickhouse://<replica-0-service>.<ns>.svc:8123/test_db` |
-| `CH_DB` | var | `test_db` |
+| `CH_JDBC_URL` | var | `jdbc:clickhouse://<replica-0-service>.<ns>.svc:8123/liquibase` |
 | `CH_LIQUIBASE_USER` | var | `liquibase` |
 | `LB_CONTEXTS` | var | `test` |
 | `CH_LIQUIBASE_PASSWORD` | secret | from your secret store |
 
 4. **Branch protection on `main`**: PR required, 1+ approval, `lint` and `plan` must pass. Turn on CODEOWNERS review
    and replace the placeholder teams in `.github/CODEOWNERS`.
+
+## Baseline (bringing an existing database under Liquibase)
+
+```powershell
+.\bin\export-baseline.ps1                      # LB_DATABASES from .env -> liquibase\<db>\... (folders created)
+.\bin\lb.ps1 validate
+.\bin\lb.ps1 changelog-sync-sql --contexts=test # preview: only ledger INSERTs
+.\bin\lb.ps1 changelog-sync --contexts=test     # record as applied, executes nothing
+.\bin\lb.ps1 tag --tag=baseline
+```
+
+Read-only against ClickHouse; existing files are never overwritten.
 
 ## Audit / paper trail
 

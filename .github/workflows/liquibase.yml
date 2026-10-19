@@ -37,9 +37,9 @@ jobs:
         run: |
           git fetch --no-tags origin "${{ github.base_ref }}"
           changed=$(git diff --name-status "origin/${{ github.base_ref }}"...HEAD -- liquibase/ \
-                    | grep -E '^(M|R|D)' | grep -v -E 'liquibase/views/' || true)
+                    | grep -E '^(M|R|D)' | grep -v -E 'liquibase/[^/]+/views/' || true)
           if [ -n "$changed" ]; then
-            echo "These existing changeset files were modified/renamed/deleted (only views/ may be edited in place):"
+            echo "These existing changeset files were modified/renamed/deleted (only <db>/views/ may be edited in place):"
             echo "$changed"; exit 1
           fi
 
@@ -54,22 +54,21 @@ jobs:
     env:
       LIQUIBASE_SEARCH_PATH: liquibase   # relative to the checkout; github.workspace is the HOST path in container jobs
       LIQUIBASE_COMMAND_CHANGELOG_FILE: changelog-master.yaml
-      LIQUIBASE_COMMAND_URL: ${{ vars.CH_JDBC_URL }}          # one fixed replica, not the cluster service
+      LIQUIBASE_COMMAND_URL: ${{ vars.CH_JDBC_URL }}          # one fixed replica; path = the `liquibase` ledger database
       LIQUIBASE_COMMAND_USERNAME: ${{ vars.CH_LIQUIBASE_USER }}
       LIQUIBASE_COMMAND_PASSWORD: ${{ secrets.CH_LIQUIBASE_PASSWORD }}
-      CH_DB: ${{ vars.CH_DB }}
       LB_CONTEXTS: ${{ vars.LB_CONTEXTS }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Validate
-        run: liquibase validate "-DDB=$CH_DB"
+        run: liquibase validate
 
       - name: Pending changesets
-        run: liquibase status --verbose --contexts="$LB_CONTEXTS" "-DDB=$CH_DB"
+        run: liquibase status --verbose --contexts="$LB_CONTEXTS"
 
       - name: SQL that would run
-        run: liquibase update-sql --contexts="$LB_CONTEXTS" "-DDB=$CH_DB" | tee plan.sql
+        run: liquibase update-sql --contexts="$LB_CONTEXTS" | tee plan.sql
 
       - uses: actions/upload-artifact@v4
         with:
