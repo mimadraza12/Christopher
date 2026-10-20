@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset baseline:database-raw labels:ddl,baseline
+--changeset christopher:database-raw labels:state
 --comment: The raw database itself.
 --preconditions onFail:MARK_RAN onError:HALT
 --precondition-sql-check expectedResult:0 SELECT count() FROM system.databases WHERE name = 'raw'

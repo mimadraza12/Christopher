@@ -29,11 +29,13 @@ jobs:
       LIQUIBASE_COMMAND_USERNAME: ${{ vars.CH_LIQUIBASE_USER }}
       LIQUIBASE_COMMAND_PASSWORD: ${{ secrets.CH_LIQUIBASE_PASSWORD }}
       LB_CONTEXTS: ${{ vars.LB_CONTEXTS }}
-      RELEASE_TAG: release-${{ github.run_number }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}          # apply exactly the merged commit
+
+      - name: Release tag is the git short hash (rollback with lb rollback --tag=<hash>)
+        run: echo "RELEASE_TAG=$(echo '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_ENV"
 
       - name: Validate
         run: liquibase validate

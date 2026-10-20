@@ -1,13 +1,13 @@
--- Paper trail queries against Liquibase's ledger (the `liquibase` database).
+-- Paper trail queries against Liquibase's ledger (stored in `raw`, the database in the JDBC URL).
 
 -- Everything applied, newest first
 SELECT DATEEXECUTED, ORDEREXECUTED, EXECTYPE, ID, AUTHOR, FILENAME, TAG, LABELS, CONTEXTS
-FROM liquibase.DATABASECHANGELOG
+FROM raw.DATABASECHANGELOG
 ORDER BY ORDEREXECUTED DESC;
 
 -- Data scripts that have run
 SELECT DATEEXECUTED, EXECTYPE, ID, AUTHOR, FILENAME, TAG
-FROM liquibase.DATABASECHANGELOG
+FROM raw.DATABASECHANGELOG
 WHERE LABELS LIKE '%data%'
 ORDER BY DATEEXECUTED;
 
@@ -18,7 +18,7 @@ SELECT DEPLOYMENT_ID,
        count()                  AS changesets,
        anyIf(TAG, TAG IS NOT NULL) AS release_tag,
        groupArray(ID)           AS ids
-FROM liquibase.DATABASECHANGELOG
+FROM raw.DATABASECHANGELOG
 GROUP BY DEPLOYMENT_ID
 ORDER BY started DESC;
 

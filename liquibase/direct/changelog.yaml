@@ -1,5 +1,13 @@
-# Changelog for the `direct` database. Within one run: database, then tables,
-# views, materialized views, data scripts, so later steps can rely on earlier DDL.
+# Changelog for the `direct` database. Order within one run:
+#   1. database.sql        the database itself
+#   2. tables/<t>.sql      CURRENT table definitions (generated, runOnChange, IF NOT EXISTS)
+#   3. mvs/<mv>.sql        CURRENT materialized views (generated, runOnChange, IF NOT EXISTS)
+#   4. scripts/<year>/     EVERY change ever run (ALTER, new table, MV change, data fix),
+#                          run once each, in file-name (= date) order
+#   5. views/<v>.sql       CURRENT plain views (generated, CREATE OR REPLACE), last so they
+#                          can use columns added by scripts in the same run
+# On an existing database 2/3/5 change nothing; on a fresh one they build the current shape
+# and the scripts converge (they're written to be safe on already-current objects).
 databaseChangeLog:
   - include:
       file: database.sql
@@ -9,14 +17,14 @@ databaseChangeLog:
       relativeToChangelogFile: true
       errorIfMissingOrEmpty: false
   - includeAll:
-      path: views/
-      relativeToChangelogFile: true
-      errorIfMissingOrEmpty: false
-  - includeAll:
-      path: materialized-views/
+      path: mvs/
       relativeToChangelogFile: true
       errorIfMissingOrEmpty: false
   - includeAll:
       path: scripts/
+      relativeToChangelogFile: true
+      errorIfMissingOrEmpty: false
+  - includeAll:
+      path: views/
       relativeToChangelogFile: true
       errorIfMissingOrEmpty: false

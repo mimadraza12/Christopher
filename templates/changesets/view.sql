@@ -1,7 +1,7 @@
 --liquibase formatted sql
 
---changeset __AUTHOR__:__ID__ runOnChange:true labels:view
---comment: __TICKET__ __VIEW__. Edit this file in place for later changes; runOnChange re-applies it.
+--changeset __AUTHOR__:__ID__ labels:view
+--comment: __TICKET__ create/replace view __VIEW__. views/__VIEW__.sql is regenerated from ClickHouse afterwards.
 CREATE OR REPLACE VIEW __DB__.__VIEW__ AS
 SELECT *
 FROM __DB__.__TABLE__ FINAL
