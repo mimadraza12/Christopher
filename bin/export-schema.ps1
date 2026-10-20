@@ -30,12 +30,14 @@ $vars = @{}
 Get-Content (Join-Path $Root '.env') | Where-Object { $_ -match '^\s*[^#].*=' } | ForEach-Object {
     $k, $v = $_ -split '=', 2; $vars[$k.Trim()] = $v.Trim()
 }
+
 $Headers = @{ 'X-ClickHouse-User' = $vars['LIQUIBASE_COMMAND_USERNAME']; 'X-ClickHouse-Key' = $vars['LIQUIBASE_COMMAND_PASSWORD'] }
 function Invoke-Ch([string]$sql) {
     $resp = Invoke-WebRequest -Uri $Url -Method Post -Body ($sql + "`nFORMAT JSONEachRow") -UseBasicParsing -Headers $Headers
     $text = [Text.Encoding]::UTF8.GetString($resp.RawContentStream.ToArray())
     @($text -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json })
 }
+
 function Write-IfChanged([string]$path, [string]$content) {
     $content = $content -replace "`r`n", "`n"
     $old = if (Test-Path $path) { [IO.File]::ReadAllText($path) } else { $null }
@@ -45,6 +47,8 @@ function Write-IfChanged([string]$path, [string]$content) {
     Write-Host "  $(if ($old) { 'updated' } else { 'added  ' }) $($path.Substring($Lb.Length + 1))"
     return $true
 }
+
+
 function Template([string]$rel) { [IO.File]::ReadAllText((Join-Path $Root "templates\$rel")) }
 
 # --- new database folder ---------------------------------------------------------------
