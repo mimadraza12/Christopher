@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS raw.appraisals
     `Loan_Number` Nullable(String),
     `Tracking_Number` Nullable(String),
     `Vendor_File_Number` Nullable(String),
-    `Loan_Amount` Nullable(Decimal(18, 3)),
+    `Loan_Amount` Nullable(Decimal(18, 2)),
     `Seller_Contribution` Nullable(Decimal(18, 2)),
     `Estimated_Lot_Size` Nullable(String),
     `Estimated_Square_Footage` Nullable(String),
